@@ -1,0 +1,146 @@
+name: Tests
+
+on:
+  push:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }} / ${{ matrix.backend }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:latest
+        env:
+          MARIADB_ROOT_PASSWORD: peewee
+          MARIADB_DATABASE: peewee
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: peewee
+          POSTGRES_DB: peewee_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.9"
+          - "3.11"
+          - "3.13"
+          - "3.14"
+        backend:
+          - sqlite
+          - postgresql
+          - mysql
+        include:
+          - python-version: "3.8"
+            backend: sqlite
+          - python-version: "3.8"
+            backend: postgresql
+          - python-version: "3.8"
+            backend: mysql
+          - python-version: "3.12"
+            backend: psycopg3
+          - python-version: "3.12"
+            backend: cysqlite
+          - python-version: "3.12"
+            backend: cockroachdb
+
+    env:
+      PEEWEE_TEST_BACKEND: ${{ matrix.backend }}
+      PGUSER: postgres
+      PGHOST: localhost
+      PGPASSWORD: peewee
+      CI: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/setup.py', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install Python dependencies
+        run: >-
+          pip install
+          setuptools
+          psycopg2-binary
+          cython
+          pymysql
+          apsw
+          mysql-connector
+          sqlcipher3
+          pysqlite3
+          "psycopg[binary]"
+          gevent
+          greenlet
+          aiosqlite
+          aiomysql
+          asyncpg
+          pydantic
+
+      - name: Build C extensions in-place
+        run: python setup.py build_ext -i
+
+      - name: Initialize PostgreSQL database
+        env:
+          PGUSER: postgres
+          PGHOST: localhost
+          PGPASSWORD: peewee
+        run: |
+          psql -d peewee_test -c "CREATE EXTENSION IF NOT EXISTS hstore;"
+
+      - name: Download and start CockroachDB
+        if: matrix.backend == 'cockroachdb'
+        run: |
+          curl -sL https://binaries.cockroachdb.com/cockroach-v24.1.0.linux-amd64.tgz | tar xz
+          sudo mv cockroach-v24.1.0.linux-amd64/cockroach /usr/local/bin/
+          cockroach start-single-node --insecure --background --listen-addr=localhost:26257
+          sleep 5
+          cockroach sql --insecure --host=localhost:26257 -e "CREATE DATABASE peewee_test;"
+
+      - name: Install cysqlite
+        if: matrix.backend == 'cysqlite' || matrix.backend == 'sqlite'
+        run: pip install git+https://github.com/coleifer/cysqlite.git
+
+      - name: Run tests
+        run: >-
+          python runtests.py
+          --mysql-user=root
+          --mysql-password=peewee
+          -s
+          -v2
