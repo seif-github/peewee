@@ -1,0 +1,141 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.backend }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13", "3.14", "3.8", "3.12"]
+        backend: ["sqlite", "postgresql", "mysql"]
+        include:
+          - python-version: "3.8"
+            backend: "postgresql"
+          - python-version: "3.12"
+            backend: "postgresql"
+          - python-version: "3.9"
+            backend: "cockroachdb"
+          - python-version: "3.11"
+            backend: "cockroachdb"
+          - python-version: "3.13"
+            backend: "cockroachdb"
+          - python-version: "3.14"
+            backend: "cockroachdb"
+          - python-version: "3.9"
+            backend: "psycopg3"
+          - python-version: "3.11"
+            backend: "psycopg3"
+          - python-version: "3.13"
+            backend: "psycopg3"
+          - python-version: "3.14"
+            backend: "psycopg3"
+          - python-version: "3.9"
+            backend: "cysqlite"
+          - python-version: "3.11"
+            backend: "cysqlite"
+          - python-version: "3.13"
+            backend: "cysqlite"
+          - python-version: "3.14"
+            backend: "cysqlite"
+          - python-version: "3.9"
+            backend: "mysql"
+          - python-version: "3.11"
+            backend: "mysql"
+          - python-version: "3.13"
+            backend: "mysql"
+          - python-version: "3.14"
+            backend: "mysql"
+
+    services:
+      mariadb:
+        image: mariadb:latest
+        env:
+          MYSQL_ROOT_PASSWORD: peewee
+          MYSQL_DATABASE: peewee
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root --password=peewee"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: peewee
+          POSTGRES_DB: peewee_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install psycopg2-binary cython pymysql apsw pydantic
+          if [[ "${{ matrix.backend }}" == "cockroachdb" ]]; then
+            pip install cockroachdb
+          elif [[ "${{ matrix.backend }}" == "psycopg3" ]]; then
+            pip install psycopg[binary]
+          elif [[ "${{ matrix.backend }}" == "cysqlite" ]]; then
+            pip install git+https://github.com/coleifer/cysqlite.git
+          fi
+
+      - name: Build C extensions
+        run: python setup.py build_ext -i
+
+      - name: Initialize Postgres database
+        run: |
+          psql -h localhost -U postgres -d peewee_test -c 'CREATE EXTENSION IF NOT EXISTS hstore;' -w
+        env:
+          PGPASSWORD: peewee
+
+      - name: Start CockroachDB (if backend is cockroachdb)
+        if: ${{ matrix.backend == 'cockroachdb' }}
+        run: |
+          wget -q https://binaries.cockroachdb.com/cockroach-v24.2.0.linux-amd64.tgz
+          tar -xzf cockroach-v24.2.0.linux-amd64.tgz
+          ./cockroach-v24.2.0.linux-amd64/cockroach start-single-node --insecure --store=cockroach-data --http-port=8080 &
+          sleep 10
+          ./cockroach-v24.2.0.linux-amd64/cockroach sql --insecure --host=localhost:26257 -e "CREATE DATABASE peewee_test;"
+
+      - name: Run tests
+        env:
+          PEEWEE_TEST_BACKEND: ${{ matrix.backend }}
+          PEEWEE_TEST_DB: peewee_test
+          PEEWEE_TEST_USER: postgres
+          PEEWEE_TEST_PASS: peewee
+          PEEWEE_TEST_HOST: localhost
+          PEEWEE_TEST_PORT: 5432
+          CI: 1
+          MYSQL_ROOT_PASSWORD: peewee
+          MYSQL_DATABASE: peewee
+        run: python runtests.py --mysql-root-password peewee --mysql-database peewee
