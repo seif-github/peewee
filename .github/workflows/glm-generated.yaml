@@ -18,7 +18,7 @@ jobs:
         image: mariadb:latest
         env:
           MARIADB_ROOT_PASSWORD: peewee
-          MARIADB_DATABASE: peewee
+          MARIADB_DATABASE: peewee_test
         ports:
           - 3306:3306
         options: >-
