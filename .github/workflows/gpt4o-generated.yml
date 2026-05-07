@@ -17,12 +17,13 @@ jobs:
 
     services:
       mariadb:
-        image: "mariadb:10.6"
+        image: "mariadb:latest"
         env:
           MARIADB_ROOT_PASSWORD: "peewee"
-          MARIADB_DATABASE: "peewee"
+          MARIADB_DATABASE: "peewee_test"
         ports:
           - "3306:3306"
+        options: "--health-cmd=\"mysqladmin ping -h 127.0.0.1 -u root -ppeewee\" --health-interval=10s --health-timeout=5s --health-retries=5"
 
       postgres:
         image: "postgres:latest"
@@ -78,6 +79,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
+            setuptools \
             psycopg2-binary \
             "psycopg[binary]" \
             cython \
@@ -111,12 +113,6 @@ jobs:
 
       - name: "Run tests"
         env:
-          PEEWEE_TEST_BACKEND: "${{ matrix.backend }}"
-          PEEWEE_TEST_POSTGRESQL_DB: "peewee_test"
-          PEEWEE_TEST_POSTGRESQL_USER: "postgres"
-          PEEWEE_TEST_POSTGRESQL_PASS: "peewee"
-          PEEWEE_TEST_POSTGRESQL_HOST: "127.0.0.1"
-          PEEWEE_TEST_POSTGRESQL_PORT: "5432"
           CI: "1"
         run: |
           python runtests.py \
@@ -124,4 +120,8 @@ jobs:
             --mysql-host=127.0.0.1 \
             --mysql-port=3306 \
             --mysql-user=root \
-            --mysql-password=peewee
+            --mysql-password=peewee \
+            --psql-host=127.0.0.1 \
+            --psql-port=5432 \
+            --psql-user=postgres \
+            --psql-password=peewee
