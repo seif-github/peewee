@@ -96,8 +96,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # BUG FIX ❺: Pinned Cython to <3.0 to prevent C-extension exception breaking
-          pip install setuptools psycopg2-binary "psycopg[binary]" "cython<3.0" pymysql apsw pydantic
+          # BUG FIX ❺: Un-pinned cython for Py3.13+ support, and pinned pydantic<2.0 to fix the 5 extension errors
+          pip install setuptools psycopg2-binary "psycopg[binary]" cython pymysql apsw "pydantic<2.0"
 
       # BUG FIX ❻: only install cysqlite for sqlite-like backends
       - name: Install cysqlite
