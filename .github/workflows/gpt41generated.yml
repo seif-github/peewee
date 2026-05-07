@@ -30,18 +30,19 @@ jobs:
             backend: "cockroachdb"
 
     services:
+      services:
       mariadb:
         image: mariadb:latest
         env:
-          MYSQL_ROOT_PASSWORD: peewee
-          MYSQL_DATABASE: peewee
+          MARIADB_ROOT_PASSWORD: peewee
+          MARIADB_DATABASE: peewee
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppeewee --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=8
+          --health-cmd="healthcheck.sh --connect --innodb_initialized" 
+          --health-interval=10s 
+          --health-timeout=5s 
+          --health-retries=5
 
       postgres:
         image: postgres:latest
