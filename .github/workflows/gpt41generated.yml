@@ -96,15 +96,17 @@
 
       - "name": "Run tests"
         "env":
-          "PEEWEE_TEST_BACKEND": "${{ matrix.backend }}"
-          "PEEWEE_TEST_POSTGRESQL_USER": "postgres"
-          "PEEWEE_TEST_POSTGRESQL_PASS": "peewee"
-          "PEEWEE_TEST_POSTGRESQL_DB": "peewee_test"
-          "PEEWEE_TEST_POSTGRESQL_HOST": "localhost"
-          "PEEWEE_TEST_POSTGRESQL_PORT": "5432"
           "CI": "1"
         "run": |
-          python runtests.py --mysql-host=127.0.0.1 --mysql-port=3306 --mysql-user=root --mysql-password=peewee
+          python runtests.py --engine="${{ matrix.backend }}" \
+            --mysql-host=127.0.0.1 \
+            --mysql-port=3306 \
+            --mysql-user=root \
+            --mysql-password=peewee \
+            --psql-host=localhost \
+            --psql-port=5432 \
+            --psql-user=postgres \
+            --psql-password=peewee
 
       - "name": "Upload test logs on failure"
         "if": "failure()"
