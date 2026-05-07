@@ -126,9 +126,10 @@ jobs:
         run: |
           curl -sOL https://binaries.cockroachdb.com/cockroach-v23.1.11.linux-amd64.tgz
           tar -xzf cockroach-v23.1.11.linux-amd64.tgz
-          ./cockroach start-single-node --insecure --advertise-addr=localhost &
+          sudo mv cockroach-v23.1.11.linux-amd64/cockroach /usr/local/bin/
+          cockroach start-single-node --insecure --advertise-addr=localhost &
           sleep 10
-          ./cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS peewee_test;"
+          cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS peewee_test;"
       - name: Run Peewee test suite
         env:
           CI: "1"
