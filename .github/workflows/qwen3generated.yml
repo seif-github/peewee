@@ -130,20 +130,15 @@ jobs:
       # BUG FIX ❸: correct env var names + correct runtests.py flags per backend
       - name: Run tests
         env:
-          PEEWEE_TEST_BACKEND: ${{ matrix.backend }}
-          PEEWEE_TEST_DB: peewee_test
-          PEEWEE_TEST_USER: postgres
-          PEEWEE_TEST_PASS: peewee
-          PEEWEE_TEST_HOST: localhost
-          PEEWEE_TEST_PORT: 5432
-          CI: 1
-          MYSQL_ROOT_PASSWORD: peewee
-          MYSQL_DATABASE: peewee_test
-        run: >-
-          python runtests.py 
-          --engine="${PEEWEE_TEST_BACKEND}" 
-          --mysql-host=127.0.0.1 
-          --mysql-password="${MYSQL_ROOT_PASSWORD}" 
-          --psql-host="${PEEWEE_TEST_HOST}" 
-          --psql-user="${PEEWEE_TEST_USER}" 
-          --psql-password="${PEEWEE_TEST_PASS}"
+          CI: "1"
+        run: |
+          python runtests.py \
+            --engine="${{ matrix.backend }}" \
+            --mysql-host=127.0.0.1 \
+            --mysql-port=3306 \
+            --mysql-user=root \
+            --mysql-password=peewee \
+            --psql-host=localhost \
+            --psql-port=5432 \
+            --psql-user=postgres \
+            --psql-password=peewee
