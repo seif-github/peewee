@@ -30,7 +30,6 @@ jobs:
             backend: cysqlite
           - python-version: "3.12"
             backend: cockroachdb
-          # 3.14-dev as separate includes (needs allow-prereleases)
           - python-version: "3.14-dev"
             backend: sqlite
             allow-prereleases: true
@@ -42,7 +41,6 @@ jobs:
             allow-prereleases: true
 
     services:
-      # BUG FIX ❶: health-cmd must use -u root -ppeewee (not -ppw, not env var)
       mariadb:
         image: mariadb:latest
         env:
@@ -74,7 +72,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # BUG FIX ❹: allow-prereleases needed for 3.14-dev
+      # BUG FIX : allow-prereleases needed for 3.14-dev
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -98,16 +96,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools psycopg2-binary "psycopg[binary]" cython pymysql apsw
 
-      # BUG FIX ❻: only install cysqlite for sqlite-like backends
       - name: Install cysqlite
         if: matrix.backend == 'sqlite' || matrix.backend == 'cysqlite'
         run: pip install git+https://github.com/coleifer/cysqlite.git
 
-      # BUG FIX ❽: use pip install -e . instead of deprecated setup.py build_ext (not bug)
+      # BUG FIX : use pip install -e . instead of deprecated setup.py build_ext (not bug)
       - name: Build C extensions
         run: python setup.py build_ext -i
 
-      # BUG FIX ❷: Run hstore init unconditionally so runtests.py doesn't crash on cross-backend tests
       - name: Initialize hstore extension
         env:
           PGPASSWORD: peewee
@@ -125,7 +121,6 @@ jobs:
             --insecure --host=localhost:26257 \
             -e "CREATE DATABASE IF NOT EXISTS peewee_test;"
 
-      # BUG FIX ❸: correct env var names + correct runtests.py flags per backend
       - name: Run tests
         env:
           CI: "1"
