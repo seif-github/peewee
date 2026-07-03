@@ -1,0 +1,155 @@
+name: "CI"
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: "tests (${{ matrix.python }} / ${{ matrix.backend }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13", "3.14"]
+        backend: ["sqlite", "postgresql", "mysql"]
+        include:
+          - python: "3.8"
+            backend: "sqlite"
+          - python: "3.12"
+            backend: "sqlite"
+          - python: "3.12"
+            backend: "psycopg3"
+          - python: "3.13"
+            backend: "psycopg3"
+          - python: "3.14"
+            backend: "psycopg3"
+          - python: "3.13"
+            backend: "cysqlite"
+          - python: "3.13"
+            backend: "cockroachdb"
+          - python: "3.13"
+            backend: "mysql8"
+
+    services:
+      mariadb:
+        image: "mariadb:latest"
+        ports:
+          - "3306:3306"
+        env:
+          MARIADB_ROOT_PASSWORD: "peewee"
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql8:
+        image: "mysql:8"
+        ports:
+          - "3307:3306"
+        env:
+          MYSQL_ROOT_PASSWORD: "peewee"
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: "postgres"
+        env:
+          POSTGRES_USER: "postgres"
+          POSTGRES_PASSWORD: "peewee"
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: "Checkout"
+        uses: "actions/checkout@v4"
+
+      - name: "Set up Python ${{ matrix.python }}"
+        uses: "actions/setup-python@v5"
+        with:
+          python-version: "${{ matrix.python }}"
+          cache: "pip"
+
+      - name: "Install system dependencies"
+        run: "sudo apt-get install -y libsqlite3-dev"
+
+      - name: "Install Python test dependencies"
+        run: |
+          pip install setuptools psycopg2-binary cython pymysql apsw mysql-connector-python sqlcipher3 pysqlite3 'psycopg[binary]' gevent
+          pip install greenlet aiosqlite aiomysql asyncpg pydantic
+
+      - name: "Build C extension"
+        run: "python setup.py build_ext -i"
+
+      - name: "Create hstore extension"
+        if: "matrix.backend == 'postgresql' || matrix.backend == 'psycopg3'"
+        run: "PGPASSWORD=peewee psql -h localhost -U postgres -d peewee_test -c 'CREATE EXTENSION IF NOT EXISTS hstore;'"
+
+      - name: "Install cockroachdb client"
+        if: "matrix.backend == 'cockroachdb'"
+        run: |
+          curl -o cockroach.tar.gz https://binaries.cockroachdb.com/cockroach-v22.2.6.linux-amd64.tgz
+          tar -xzf cockroach.tar.gz
+          sudo cp cockroach-v22.2.6.linux-amd64/cockroach /usr/local/bin/
+
+      - name: "Install cysqlite"
+        if: "matrix.backend == 'cysqlite' || matrix.backend == 'sqlite'"
+        run: "pip install -e 'git+https://github.com/coleifer/cysqlite#egg=cysqlite'"
+
+      - name: "Run tests"
+        env:
+          PEEWEE_TEST_BACKEND: "${{ matrix.backend }}"
+          PEEWEE_MYSQL_PORT: "${{ matrix.backend == 'mysql8' && '3307' || '3306' }}"
+          PGUSER: "postgres"
+          PGHOST: "localhost"
+          PGPASSWORD: "peewee"
+          CI: "1"
+        run: "python runtests.py --mysql-user=root --mysql-password=peewee -s -v2"
+
+      - name: "Run asyncio stress tests"
+        if: "matrix.backend == 'postgresql' && matrix.python == '3.13'"
+        run: "python runtests.py -A"
+
+  typecheck:
+    name: "typecheck"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "Checkout"
+        uses: "actions/checkout@v4"
+
+      - name: "Set up Python"
+        uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: "Install peewee and type checkers"
+        run: "NO_SQLITE=1 pip install . mypy pyright ty typing_extensions"
+
+      - name: "Run mypy.stubtest"
+        working-directory: "typecheck"
+        run: "python -m mypy.stubtest peewee --allowlist stubtest_allowlist.txt"
+
+      - name: "Run mypy"
+        working-directory: "typecheck"
+        run: "mypy check_stub.py"
+
+      - name: "Run pyright"
+        working-directory: "typecheck"
+        run: "pyright check_stub.py"
